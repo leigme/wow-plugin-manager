@@ -90,8 +90,9 @@ func Zip(dst, src string, done func()) (err error) {
 }
 
 // UnZip 解压文件
-func UnZip(dst, src string, done func()) (err error) {
+func UnZip(dst, src, path string, done func()) (err error) {
 	defer done()
+	RemoveContents(path)
 	// 打开压缩文件，这个 zip 包有个方便的 ReadCloser 类型
 	// 这个里面有个方便的 OpenReader 函数，可以比 tar 的时候省去一个打开文件的步骤
 	zr, err := zip.OpenReader(src)
@@ -157,4 +158,23 @@ func copy(file *zip.File, path string) (n int64, err error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+func RemoveContents(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	names, err := d.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		err = os.RemoveAll(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

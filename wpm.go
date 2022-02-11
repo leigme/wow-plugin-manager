@@ -21,6 +21,7 @@ var (
 	cmd           string
 	rootPath      string
 	destPath      string
+	cfg           *ini.File
 	interfacePath = "Interface"
 	addOnsPath    = "AddOns"
 	accountPath   = "Account"
@@ -50,27 +51,34 @@ type WpmConfig struct {
 }
 
 func init() {
+
 	cmd = os.Args[len(os.Args)-1]
-	var cfg *ini.File
+
 	if cfg, err = ini.Load("wpm.ini"); err != nil {
-		log.Println(err)
-	} else {
-		rootPath = cfg.Section("").Key("RootPath").String()
-		destPath = cfg.Section("").Key("DestPath").String()
-		if schema, err = cfg.Section("").Key("Schema").Int(); err != nil {
+		if os.IsNotExist(err) {
+			cfg = ini.Empty()
+			cfg.Section("").Key("RootPath").SetValue("")
+			cfg.Section("").Key("DestPath").SetValue("")
+			cfg.Section("").Key("Schema").SetValue("0")
+			err := cfg.SaveToIndent("wpm.ini", "\t")
+			if err != nil {
+				return
+			}
+		} else {
 			log.Println(err)
 		}
+	}
+
+	rootPath = cfg.Section("").Key("RootPath").String()
+	destPath = cfg.Section("").Key("DestPath").String()
+	if schema, err = cfg.Section("").Key("Schema").Int(); err != nil {
+		log.Println(err)
 	}
 
 	flag.StringVar(&rootPath, "r", rootPath, "WOW 安装根路径 ")
 	flag.StringVar(&destPath, "d", destPath, "备份文件的目录")
 	flag.IntVar(&schema, "s", schema, "备份模式 默认备份全部文件，包括游戏设置；简单模式 -s 1 ")
 	flag.Parse()
-
-	if strings.EqualFold(rootPath, "") {
-		log.Println("rootPath is nil!")
-		os.Exit(1)
-	}
 
 	wpmConfig = &WpmConfig{
 		RootPath:      rootPath,
@@ -94,7 +102,7 @@ func main() {
 	case "recover":
 		recover(getPaths(wpmConfig), wpmConfig.RootPath)
 	default:
-		log.Println("请输入操作命令")
+		getWindows().ShowAndRun()
 	}
 	os.Exit(0)
 }
@@ -142,12 +150,26 @@ func recover(paths map[string]string, rootPath string) {
 	var wg sync.WaitGroup
 	wg.Add(len(paths))
 	var f *os.File
-	for k := range paths {
+	for k, v := range paths {
 		if f, err = os.Open(k + ".zip"); err != nil {
 			log.Println(err)
 		} else {
-			go UnZip(rootPath, f.Name(), wg.Done)
+			go UnZip(rootPath, f.Name(), v, wg.Done)
 		}
 	}
 	wg.Wait()
+}
+
+func saveConfig(wpmConfig *WpmConfig, cfg *ini.File) {
+	cfg.Section("").Key("RootPath").SetValue(wpmConfig.RootPath)
+	cfg.Section("").Key("DestPath").SetValue(wpmConfig.DestPath)
+	if wpmConfig.Schema == Express {
+		cfg.Section("").Key("Schema").SetValue("1")
+	} else {
+		cfg.Section("").Key("Schema").SetValue("0")
+	}
+	err := cfg.SaveTo("wpm.ini")
+	if err != nil {
+		return
+	}
 }
