@@ -20,6 +20,7 @@ import (
 var (
 	cmd           string
 	rootPath      string
+	destPath      string
 	interfacePath = "Interface"
 	addOnsPath    = "AddOns"
 	accountPath   = "Account"
@@ -39,6 +40,7 @@ const (
 
 type WpmConfig struct {
 	RootPath      string `json:"root-path"`
+	DestPath      string `json:"dest-path"`
 	AddOnsPath    string `json:"add-ons-path"`
 	InterfacePath string `json:"interface-path"`
 	AccountPath   string `json:"account-path"`
@@ -47,8 +49,6 @@ type WpmConfig struct {
 	Schema        Schema `json:"schema"`
 }
 
-// backups "recover"
-
 func init() {
 	cmd = os.Args[len(os.Args)-1]
 	var cfg *ini.File
@@ -56,12 +56,14 @@ func init() {
 		log.Println(err)
 	} else {
 		rootPath = cfg.Section("").Key("RootPath").String()
+		destPath = cfg.Section("").Key("DestPath").String()
 		if schema, err = cfg.Section("").Key("Schema").Int(); err != nil {
 			log.Println(err)
 		}
 	}
 
-	flag.StringVar(&rootPath, "r", rootPath, "WOW 安装根路径")
+	flag.StringVar(&rootPath, "r", rootPath, "WOW 安装根路径 ")
+	flag.StringVar(&destPath, "d", destPath, "备份文件的目录")
 	flag.IntVar(&schema, "s", schema, "备份模式 默认备份全部文件，包括游戏设置；简单模式 -s 1 ")
 	flag.Parse()
 
@@ -72,6 +74,7 @@ func init() {
 
 	wpmConfig = &WpmConfig{
 		RootPath:      rootPath,
+		DestPath:      destPath,
 		InterfacePath: interfacePath,
 		AddOnsPath:    addOnsPath,
 		AccountPath:   accountPath,
@@ -81,35 +84,46 @@ func init() {
 	}
 	jsonStr, _ := json.Marshal(wpmConfig)
 	log.Println("wpmConfig: " + string(jsonStr))
+
 }
 
 func main() {
-	paths := make(map[string]string)
-	switch wpmConfig.Schema {
-	case All:
-		paths[wpmConfig.InterfacePath] = filepath.Join(wpmConfig.RootPath, wpmConfig.InterfacePath)
-		paths[wpmConfig.WTFPath] = filepath.Join(wpmConfig.RootPath, wpmConfig.WTFPath)
-		paths[wpmConfig.FontsPath] = filepath.Join(wpmConfig.RootPath, wpmConfig.FontsPath)
-		break
-	case Express:
-		paths[wpmConfig.AddOnsPath] = filepath.Join(filepath.Join(wpmConfig.RootPath, wpmConfig.InterfacePath), wpmConfig.AddOnsPath)
-		paths[wpmConfig.AccountPath] = filepath.Join(filepath.Join(wpmConfig.RootPath, wpmConfig.WTFPath), wpmConfig.AccountPath)
-		paths[wpmConfig.FontsPath] = filepath.Join(wpmConfig.RootPath, wpmConfig.FontsPath)
-		break
-	default:
-		fmt.Println("Schema is wrong!")
-	}
 	switch cmd {
 	case "backups":
-		backups(paths)
+		backups(getPaths(wpmConfig))
 	case "recover":
-		recover(paths, wpmConfig.RootPath)
+		recover(getPaths(wpmConfig), wpmConfig.RootPath)
 	default:
 		log.Println("请输入操作命令")
 	}
 	os.Exit(0)
 }
 
+/**
+ * 通过配置文件解析参数
+ */
+func getPaths(wpmConfig *WpmConfig) map[string]string {
+	paths := make(map[string]string)
+	switch wpmConfig.Schema {
+	case All:
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.InterfacePath)] = filepath.Join(wpmConfig.RootPath, wpmConfig.InterfacePath)
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.WTFPath)] = filepath.Join(wpmConfig.RootPath, wpmConfig.WTFPath)
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.FontsPath)] = filepath.Join(wpmConfig.RootPath, wpmConfig.FontsPath)
+		break
+	case Express:
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.AddOnsPath)] = filepath.Join(filepath.Join(wpmConfig.RootPath, wpmConfig.InterfacePath), wpmConfig.AddOnsPath)
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.AccountPath)] = filepath.Join(filepath.Join(wpmConfig.RootPath, wpmConfig.WTFPath), wpmConfig.AccountPath)
+		paths[filepath.Join(wpmConfig.DestPath, wpmConfig.FontsPath)] = filepath.Join(wpmConfig.RootPath, wpmConfig.FontsPath)
+		break
+	default:
+		fmt.Println("Schema is wrong!")
+	}
+	return paths
+}
+
+/**
+ * 备份方法
+ */
 func backups(paths map[string]string) {
 	var wg sync.WaitGroup
 	wg.Add(len(paths))
@@ -119,6 +133,9 @@ func backups(paths map[string]string) {
 	wg.Wait()
 }
 
+/**
+ * 恢复方法
+ */
 func recover(paths map[string]string, rootPath string) {
 	s := string(os.PathSeparator)
 	rootPath = rootPath[:strings.Index(rootPath, s)+1]
